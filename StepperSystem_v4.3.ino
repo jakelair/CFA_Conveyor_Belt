@@ -5,7 +5,7 @@
  * 
  * Author           : Jake Lair
  * 
- * Date created     : 9/6/2020
+ * Date created     : 11/14/2020
  * 
  * Purpose          : Software for operating the conveyor belt
  * 
@@ -18,17 +18,20 @@
  */
 
 // Pin Declaration
-#define Stepper_Pul   8   // Stepper Motor Driver Pulse
-#define Stepper_Dir   6   // Stepper Motor Driver Direction
-#define Sensor_Pin    4   // Photoelectric Sensor
-#define EStop         2   // Latched Emergency Pushbutton
+#define Stepper_En_NOT 10  // Stepper Motor Enable (Active Low)
+#define Stepper_Pul     8   // Stepper Motor Driver Pulse
+#define Stepper_Dir     6   // Stepper Motor Driver Direction
+#define Sensor_Pin      4   // Photoelectric Sensor
+#define EStop           2   // Latched Emergency Pushbutton
 
 // Global Variables
-const unsigned long Stepper_Speed = 250;
-const unsigned long RampTime = 250;
-const unsigned long delaytime = 500;
+const unsigned long Stepper_Speed = 200;
+const unsigned long RampTime = 400;
+unsigned long current_time;
+unsigned long current_time_micro;
 
-volatile unsigned long timestamp;
+volatile unsigned long timestamp_milli;
+volatile unsigned long timestamp_micro;
 volatile bool EStop_State;          // 0 (EStop is unlatched) and 1 (EStop is latched)
 volatile bool Sensor_State;         // 0 (No obstructions)    and 1 (Obstruction)
 volatile bool Motor_Stopped = 1;    // 0 (Motor is moving)    and 1 (Motor is stopped)
@@ -43,25 +46,28 @@ void setup() {
   pinMode(EStop, INPUT);
 
   pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(Stepper_En_NOT, OUTPUT);
   pinMode(Stepper_Pul, OUTPUT);
   pinMode(Stepper_Dir, OUTPUT);
-  delay(1000);
-
 
   // Verify correct code for end user by blinking LED_BUILTIN
   for (int i = 0; i < 1; i++) {
     for (int j = 0; j < 1; j++) {
       digitalWrite(LED_BUILTIN, HIGH);
-      delay(250);
+          timestamp_milli = millis();
+          while (millis() - current_time < 250);
       digitalWrite(LED_BUILTIN, LOW);
-      delay(250);
+          timestamp_milli = millis();
+          while (millis() - current_time < 250);
     }
-    delay(1000);
+    
+    while (millis() - current_time < 1000);
   }
 
 
   // Setting Initial Output States and Routine States
-  digitalWrite(Stepper_Dir, HIGH);  // High (CCW) and Low (CW)
+  digitalWrite(Stepper_En_NOT, HIGH);
+  digitalWrite(Stepper_Dir, LOW);  // High (CCW) and Low (CW)
 
   if (digitalRead(EStop)) {
     EStop_State = 1;
@@ -95,9 +101,12 @@ void loop() {
   // Check if the system can move -> not in EStop or Sensor states
   if (!(EStop_State || Sensor_State)) {
     digitalWrite(Stepper_Pul, LOW);
-    delayMicroseconds(Stepper_Speed/2);
+    //delayMicroseconds(60);
+        timestamp_micro = micros();
+        while (micros() - timestamp_micro < (Stepper_Speed));
     digitalWrite(Stepper_Pul, HIGH);
-    delayMicroseconds(Stepper_Speed);
+        timestamp_micro = micros();
+        while (micros() - timestamp_micro < (Stepper_Speed));
   }
   
   // Stopping the Motor and waiting until the EStop state is resolved
@@ -154,7 +163,6 @@ void EStop_ISR() {
 
 // Interrupt function called when Sensor pin changes states (HIGH to/from LOW)
 void Sensor_ISR() {
-  delayMicroseconds(500);
   Sensor_State = !Sensor_State;
 }
 
@@ -164,6 +172,7 @@ void Sensor_ISR() {
 //*****************************************//
 // Slowing speeding up the motor until set speed
 void Speed_Up() {
+  digitalWrite(Stepper_En_NOT, LOW);
   Motor_Stopped = 0;
   int i;
   for (i = Stepper_Speed + RampTime; i > Stepper_Speed; i--) {
@@ -171,9 +180,11 @@ void Speed_Up() {
       break;
     }
     digitalWrite(Stepper_Pul, LOW);
-    delayMicroseconds(i/2);
+        timestamp_micro = micros();
+        while (micros() - timestamp_micro < (i/2));
     digitalWrite(Stepper_Pul, HIGH);
-    delayMicroseconds(i);
+        timestamp_micro = micros();
+        while (micros() - timestamp_micro < i);
   }
 }
 
@@ -182,9 +193,12 @@ void Speed_Down() {
   int i;
   for (i = Stepper_Speed; i < Stepper_Speed + RampTime; i++) {
     digitalWrite(Stepper_Pul, LOW);
-    delayMicroseconds(i/2);
+        timestamp_micro = micros();
+        while (micros() - timestamp_micro < (i/2));
     digitalWrite(Stepper_Pul, HIGH);
-    delayMicroseconds(i);
+        timestamp_micro = micros();
+        while (micros() - timestamp_micro < i);
   }
+  digitalWrite(Stepper_En_NOT, HIGH);
   Motor_Stopped = 1;
 }
